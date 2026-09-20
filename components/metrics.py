@@ -155,11 +155,11 @@ def render_trinity_multi_ticker_view(
     strike_window_dollar: Optional[float] = 100.0
 ):
     """
-    Renders 0DTE Multi-Ticker Matrix (Trinity View) with side-by-side Institutional Grid tables,
+    Renders 0DTE Multi-Ticker Matrix (Trinity View) with side-by-side Heatmap Grid tables,
     live spot prices, Yellow `#FFD700` King Node highlights, and formatted numerical values.
     """
     st.markdown("## ⚡ 0DTE Multi-Ticker Matrix (Trinity View)")
-    st.caption("Side-by-side 0DTE GEX Institutional Heatmap Grids with King Node (🟡 ★) and Spot Price (⚪) highlights.")
+    st.caption("Side-by-side 0DTE GEX Heatmap Grids with King Node (🟡 ★) and Spot Price (⚪) highlights.")
 
     if not tickers_data:
         st.warning("No multi-ticker comparison data available.")
@@ -167,7 +167,7 @@ def render_trinity_multi_ticker_view(
 
     cols = st.columns(len(tickers_data))
 
-    from components.institutional_grid import render_institutional_heatmap_grid
+    from components.heatmap import render_heatmap_grid
 
     for idx, data in enumerate(tickers_data):
         symbol = data["symbol"]
@@ -190,8 +190,8 @@ def render_trinity_multi_ticker_view(
             # Create 1-column matrix (Strike x 0DTE Expiration)
             matrix_df = df_uniq.set_index("strike")[["net_gex_m"]].rename(columns={"net_gex_m": f"{exp_date}"})
 
-            # Render Institutional Grid table for this ticker
-            render_institutional_heatmap_grid(
+            # Render Heatmap Grid table for this ticker
+            render_heatmap_grid(
                 matrix=matrix_df,
                 spot_price=spot,
                 king_nodes_per_exp={f"{exp_date}": king_node},

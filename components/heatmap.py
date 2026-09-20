@@ -45,20 +45,20 @@ def _get_cell_bg_style(val: float, max_abs_val: float, is_king: bool = False) ->
         # Indigo/Purple for Negative GEX
         return f"background-color: rgba(125, 45, 175, {opacity:.2f}); color: #ffffff;"
 
-def render_institutional_heatmap_grid(
+def render_heatmap_grid(
     matrix: pd.DataFrame,
     spot_price: float,
     king_nodes_per_exp: Optional[Dict[str, float]] = None,
     symbol: str = "TICKER",
-    title: str = "Institutional GEX Matrix",
+    title: str = "GEX Heatmap Matrix",
     is_currency: bool = True,
-    strike_window_dollar: Optional[float] = None,
+    strike_window_dollar: Optional[float] = 100.0,
     strike_count_around_king: Optional[int] = None
 ):
     """
-    Renders an interactive Institutional Heatmap Grid Table
+    Renders an interactive Heatmap Grid Table
     with per-column King Node highlights, centered viewport scrolling,
-    and strike filtering (N strikes above/below King Node or dollar window).
+    and strike filtering (default ±$100 dollar window around spot or N strikes).
     """
     if matrix.empty:
         st.info("No options matrix data available to render Heatmap Grid.")
@@ -122,7 +122,7 @@ def render_institutional_heatmap_grid(
     html_lines = []
     html_lines.append("""
     <style>
-        .inst-grid-wrapper {
+        .heatmap-grid-wrapper {
             background-color: #0b0e14;
             border: 1px solid #30363d;
             border-radius: 12px;
@@ -131,7 +131,7 @@ def render_institutional_heatmap_grid(
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
             font-family: 'JetBrains Mono', 'Fira Code', 'Segoe UI', monospace;
         }
-        .inst-grid-header-bar {
+        .heatmap-grid-header-bar {
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -139,7 +139,7 @@ def render_institutional_heatmap_grid(
             border-bottom: 1px solid #21262d;
             margin-bottom: 12px;
         }
-        .inst-grid-title {
+        .heatmap-grid-title {
             font-size: 1.05rem;
             font-weight: 700;
             color: #f0f6fc;
@@ -147,12 +147,12 @@ def render_institutional_heatmap_grid(
             align-items: center;
             gap: 8px;
         }
-        .inst-grid-pill-group {
+        .heatmap-grid-pill-group {
             display: flex;
             gap: 8px;
             align-items: center;
         }
-        .inst-grid-pill {
+        .heatmap-grid-pill {
             background: #161b22;
             border: 1px solid #30363d;
             border-radius: 16px;
@@ -161,25 +161,25 @@ def render_institutional_heatmap_grid(
             color: #8b949e;
             font-weight: 600;
         }
-        .inst-grid-pill-spot {
+        .heatmap-grid-pill-spot {
             background: rgba(0, 229, 255, 0.15);
             border: 1px solid #00e5ff;
             color: #00e5ff;
         }
-        .inst-grid-table-container {
-            max-height: 580px;
+        .heatmap-grid-table-container {
+            max-height: 850px;
             overflow: auto;
             border-radius: 8px;
             border: 1px solid #21262d;
             position: relative;
         }
-        .inst-grid-table {
+        .heatmap-grid-table {
             width: 100%;
             border-collapse: separate;
             border-spacing: 2px;
             background-color: #0b0e14;
         }
-        .inst-grid-table th {
+        .heatmap-grid-table th {
             position: sticky;
             top: 0;
             background-color: #161b22;
@@ -192,7 +192,7 @@ def render_institutional_heatmap_grid(
             z-index: 10;
             white-space: nowrap;
         }
-        .inst-grid-table th.col-strike {
+        .heatmap-grid-table th.col-strike {
             position: sticky;
             left: 0;
             text-align: left;
@@ -201,7 +201,7 @@ def render_institutional_heatmap_grid(
             min-width: 100px;
             border-right: 1px solid #30363d;
         }
-        .inst-grid-table td.col-strike-cell {
+        .heatmap-grid-table td.col-strike-cell {
             position: sticky;
             left: 0;
             background-color: #0e1117;
@@ -223,7 +223,7 @@ def render_institutional_heatmap_grid(
             box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
             display: inline-block;
         }
-        .inst-grid-table td.cell-val {
+        .heatmap-grid-table td.cell-val {
             padding: 7px 12px;
             text-align: right;
             font-weight: 600;
@@ -231,7 +231,7 @@ def render_institutional_heatmap_grid(
             white-space: nowrap;
             border-radius: 3px;
         }
-        .inst-grid-legend {
+        .heatmap-grid-legend {
             display: flex;
             gap: 16px;
             justify-content: flex-end;
@@ -265,25 +265,25 @@ def render_institutional_heatmap_grid(
     </style>
     """)
 
-    html_lines.append('<div class="inst-grid-wrapper">')
+    html_lines.append('<div class="heatmap-grid-wrapper">')
     
     # Header Control Bar
     king_str = f"{primary_king:g}" if (primary_king % 1 == 0) else f"{primary_king:.1f}"
     html_lines.append(f"""
-    <div class="inst-grid-header-bar">
-        <div class="inst-grid-title">
+    <div class="heatmap-grid-header-bar">
+        <div class="heatmap-grid-title">
             <span>🔥 {title}</span>
         </div>
-        <div class="inst-grid-pill-group">
-            <span class="inst-grid-pill skylit-pill-spot">🎯 {symbol}: ${spot_price:,.2f}</span>
-            <span class="inst-grid-pill" style="border-color:#ffd700; color:#ffd700;">👑 King: {king_str}★</span>
+        <div class="heatmap-grid-pill-group">
+            <span class="heatmap-grid-pill skylit-pill-spot">🎯 {symbol}: ${spot_price:,.2f}</span>
+            <span class="heatmap-grid-pill" style="border-color:#ffd700; color:#ffd700;">👑 King: {king_str}★</span>
         </div>
     </div>
     """)
 
     # Table Container
-    html_lines.append('<div class="inst-grid-table-container" id="grid-container-box">')
-    html_lines.append('<table class="inst-grid-table">')
+    html_lines.append('<div class="heatmap-grid-table-container" id="heatmap-container-box">')
+    html_lines.append('<table class="heatmap-grid-table">')
     
     # Table Header Row
     html_lines.append('<thead><tr>')
@@ -299,7 +299,7 @@ def render_institutional_heatmap_grid(
         is_center_row = (s == center_row_strike)
         strike_str = f"{s:g}" if (s % 1 == 0) else f"{s:.1f}"
         
-        row_attr = ' id="grid-center-row"' if is_center_row else ""
+        row_attr = ' id="heatmap-center-row"' if is_center_row else ""
         html_lines.append(f'<tr{row_attr}>')
         
         # Strike Y-Axis Cell (With White Spot Badge if spot strike)
@@ -325,9 +325,10 @@ def render_institutional_heatmap_grid(
     html_lines.append('</tbody></table></div>')
 
     # Footer Legend
-    html_lines.append("""
-    <div class="inst-grid-legend">
-        <div class="legend-item"><span class="spot-strike-badge" style="padding:1px 5px; font-size:10px;">365.0</span> Spot Strike</div>
+    closest_spot_str = f"{closest_spot_strike:g}" if (closest_spot_strike % 1 == 0) else f"{closest_spot_strike:.1f}"
+    html_lines.append(f"""
+    <div class="heatmap-grid-legend">
+        <div class="legend-item"><span class="spot-strike-badge" style="padding:1px 5px; font-size:10px;">{closest_spot_str}</span> Spot Strike</div>
         <div class="legend-item"><div class="color-box-king"></div> 👑 King Node (Max GEX)</div>
         <div class="legend-item"><div class="color-box-pos"></div> Positive GEX</div>
         <div class="legend-item"><div class="color-box-neg"></div> Negative GEX</div>
@@ -339,7 +340,7 @@ def render_institutional_heatmap_grid(
     <script>
         (function() {
             setTimeout(function() {
-                var row = document.getElementById("grid-center-row");
+                var row = document.getElementById("heatmap-center-row");
                 if (row && row.scrollIntoView) {
                     row.scrollIntoView({ behavior: "instant", block: "center" });
                 }

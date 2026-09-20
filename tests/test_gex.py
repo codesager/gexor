@@ -61,5 +61,20 @@ class TestGEXCalculator(unittest.TestCase):
         )
         self.assertIsInstance(signals, list)
 
+    def test_heatmap_grid_import_and_export(self):
+        from components import render_heatmap_grid, render_institutional_heatmap_grid
+        from components.heatmap import render_heatmap_grid as direct_render
+        self.assertIs(render_heatmap_grid, direct_render)
+        self.assertIs(render_institutional_heatmap_grid, render_heatmap_grid)
+
+    def test_spx_spot_price_alignment(self):
+        # Verify SPX spot price is within realistic ~7650 bounds and King Node distance is reasonable (< 5%)
+        chain = generate_mock_options_chain("SPX", "2026-09-19", strike_window_pct=10.0)
+        c_df, p_df = pd.DataFrame(chain["calls"]), pd.DataFrame(chain["puts"])
+        gex_df = calculate_gex_df(c_df, p_df, spot_price=7650.0, min_oi=5)
+        levels = find_gex_key_levels(gex_df, spot_price=7650.0)
+        dist_pct = abs(levels["king_node"] - 7650.0) / 7650.0 * 100.0
+        self.assertLess(dist_pct, 5.0)
+
 if __name__ == "__main__":
     unittest.main()

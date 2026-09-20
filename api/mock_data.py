@@ -7,8 +7,8 @@ from scipy.stats import norm
 
 # Standard reference prices for common tickers
 TICKER_SPOT_PRESETS = {
-    "SPX": 5680.0,
-    "SPXW": 5680.0,
+    "SPX": 7650.0,
+    "SPXW": 7650.0,
     "SPY": 568.0,
     "QQQ": 485.0,
     "NDX": 19800.0,
@@ -68,12 +68,12 @@ def black_scholes_greeks(
 ) -> Tuple[float, float, float]:
     """Calculates Black-Scholes Delta, Gamma, and Price."""
     if dte_years <= 0 or iv <= 0 or spot <= 0 or strike <= 0:
-        return 0.5, 0.01, max(0.01, spot - strike if option_type == "call" else strike - spot)
+        return (0.5 if option_type == "call" else -0.5), 0.0, max(0.01, spot - strike if option_type == "call" else strike - spot)
         
     d1 = (math.log(spot / strike) + (r + 0.5 * iv ** 2) * dte_years) / (iv * math.sqrt(dte_years))
     d2 = d1 - iv * math.sqrt(dte_years)
     
-    gamma = norm.pdf(d1) / (spot * iv * math.sqrt(dte_years))
+    gamma = (norm.pdf(d1) / (spot * iv * math.sqrt(dte_years))) if abs(d1) < 10.0 else 0.0
     
     if option_type.lower() == "call":
         delta = norm.cdf(d1)

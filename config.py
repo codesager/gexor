@@ -4,15 +4,25 @@ from dotenv import load_dotenv
 # Load environment variables from .env if present
 load_dotenv()
 
+def _get_config_var(key: str, default: str = "") -> str:
+    """Helper to fetch config from Streamlit Secrets (cloud) or os.getenv/.env (local)."""
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and key in st.secrets:
+            return str(st.secrets[key])
+    except Exception:
+        pass
+    return os.getenv(key, default)
+
 # Public.com API Credentials
 # Account ID: Brokerage Account Number
-ACCOUNT_ID = os.getenv("ACCOUNT_ID", "12345")
+ACCOUNT_ID = _get_config_var("ACCOUNT_ID", "12345")
 
 # Public.com API Secret Key (Generated in Public.com app under Account Settings > Security > API)
-PUBLIC_SECRET_KEY = os.getenv("PUBLIC_SECRET_KEY", os.getenv("PUBLIC_API_KEY", "xxxxxxx"))
+PUBLIC_SECRET_KEY = _get_config_var("PUBLIC_SECRET_KEY", _get_config_var("PUBLIC_API_KEY", "xxxxxxx"))
 
 # Optional Dashboard Protection Password
-APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+APP_PASSWORD = _get_config_var("APP_PASSWORD", "")
 
 # Default Dashboard Settings
 DEFAULT_STRIKE_WINDOW_PCT = 10.0  # Default +/- 10%

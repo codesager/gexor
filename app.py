@@ -18,6 +18,7 @@ from config import (
     PRESET_TICKERS, TRINITY_DEFAULT_TICKERS, COLORS
 )
 from api import PublicDotComClientWrapper
+from api.mock_data import get_base_spot_price
 from analytics import (
     calculate_gex_df,
     find_gex_key_levels,
@@ -34,7 +35,7 @@ from components import (
     render_regime_banner,
     render_trade_recommendations_table,
     render_trinity_multi_ticker_view,
-    render_institutional_heatmap_grid
+    render_heatmap_grid
 )
 
 # Custom CSS for Dark Glassmorphism Styling
@@ -90,13 +91,15 @@ if APP_PASSWORD:
 
     if not st.session_state.authenticated:
         st.markdown("## 🔒 GEXOR Dashboard Protection")
-        pwd = st.text_input("Enter Dashboard Password:", type="password")
-        if st.button("Unlock Dashboard"):
-            if pwd == APP_PASSWORD:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Invalid password")
+        with st.form("login_form"):
+            pwd = st.text_input("Enter Dashboard Password:", type="password")
+            submit_login = st.form_submit_button("Unlock Dashboard")
+            if submit_login:
+                if pwd == APP_PASSWORD:
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Invalid password")
         st.stop()
 
 # Cache API calls per ticker and expiration for fast response
@@ -109,6 +112,7 @@ def fetch_ticker_gex_data(symbol: str, expiration_count: int, strike_window_pct:
     exp_gex_dfs = {}
     key_levels_map = {}
     expected_moves_map = {}
+    all_chain_strikes = []
 
     for exp in expirations:
         chain_raw = client.get_option_chain_with_greeks(symbol, exp, strike_window_pct)
@@ -116,10 +120,28 @@ def fetch_ticker_gex_data(symbol: str, expiration_count: int, strike_window_pct:
         puts_df = pd.DataFrame(chain_raw.get("puts", []))
 
         gex_df = calculate_gex_df(calls_df, puts_df, spot_price=spot, min_oi=min_oi)
-        levels = find_gex_key_levels(gex_df, spot_price=spot)
-        straddle_move = calculate_atm_straddle_move(gex_df, spot_price=spot)
-
+        if not gex_df.empty:
+            all_chain_strikes.extend(gex_df["strike"].tolist())
         exp_gex_dfs[exp] = gex_df
+
+    # Auto-align spot price if quote API returned an out-of-range value vs actual option chain strikes
+    if all_chain_strikes:
+        min_s, max_s = min(all_chain_strikes), max(all_chain_strikes)
+        if spot < min_s or spot > max_s:
+            spot = min(all_chain_strikes, key=lambda s: abs(s - spot))
+            for exp in expirations:
+                if exp in exp_gex_dfs and not exp_gex_dfs[exp].empty:
+                    exp_gex_dfs[exp]["distance_from_spot_pct"] = ((exp_gex_dfs[exp]["strike"] - spot) / spot) * 100.0
+
+    for exp in expirations:
+        gex_df = exp_gex_dfs.get(exp, pd.DataFrame())
+        if not gex_df.empty:
+            levels = find_gex_key_levels(gex_df, spot_price=spot)
+            straddle_move = calculate_atm_straddle_move(gex_df, spot_price=spot)
+        else:
+            levels = find_gex_key_levels(pd.DataFrame(), spot_price=spot)
+            straddle_move = calculate_atm_straddle_move(pd.DataFrame(), spot_price=spot)
+
         key_levels_map[exp] = levels
         expected_moves_map[exp] = straddle_move
 
@@ -301,37 +323,37 @@ with main_tab1:
     with hm_col1:
         view_mode = st.radio(
             "Heatmap Display Style:",
-            options=["🔥 Institutional Grid Table (Numeric Matrix)", "📈 Plotly Continuous Surface Chart"],
+            options=["🔥 Heatmap Grid Table (Numeric Matrix)", "📈 Plotly Continuous Surface Chart"],
             horizontal=True,
             index=0,
-            help="Institutional Table renders formatted numerical values inside every cell, white spot strike badge, and gold glowing King Node pills."
+            help="Heatmap Grid Table renders formatted numerical values inside every cell, white spot strike badge, and gold glowing King Node pills."
         )
 
     with hm_col2:
         strike_focus_opt = st.selectbox(
-            "Strike Focus Window (King Node Centered):",
+            "Strike Focus Window:",
             options=[
+                "±$100 Dollar Offset around Spot",
                 "🎯 ±10 Strikes around King Node (Centered)",
                 "🎯 ±5 Strikes around King Node (Tight)",
                 "🎯 ±15 Strikes around King Node (Medium)",
-                "±$100 Dollar Offset around Spot",
                 "Full Window (All Strikes)"
             ],
             index=0,
-            help="Filters grid to N strikes above & below the King Node (or dollar range), centered in the viewport."
+            help="Filters grid to N strikes above & below spot or King Node, centered in the viewport."
         )
 
     strike_count_around_king = None
     strike_focus_dollar = None
 
-    if "±10 Strikes" in strike_focus_opt:
+    if "±$100" in strike_focus_opt:
+        strike_focus_dollar = 100.0
+    elif "±10 Strikes" in strike_focus_opt:
         strike_count_around_king = 10
     elif "±5 Strikes" in strike_focus_opt:
         strike_count_around_king = 5
     elif "±15 Strikes" in strike_focus_opt:
         strike_count_around_king = 15
-    elif "±$100" in strike_focus_opt:
-        strike_focus_dollar = 100.0
 
     hm_tab1, hm_tab2, hm_tab3 = st.tabs(["Net GEX Matrix (King Nodes)", "Open Interest Matrix", "Volume / OI Matrix"])
 
@@ -360,8 +382,8 @@ with main_tab1:
     vol_oi_matrix = pd.DataFrame(vol_oi_dict).sort_index() if vol_oi_dict else pd.DataFrame()
 
     with hm_tab1:
-        if "Institutional" in view_mode:
-            render_institutional_heatmap_grid(
+        if "Heatmap Grid" in view_mode:
+            render_heatmap_grid(
                 matrix=net_gex_matrix,
                 spot_price=spot_price,
                 king_nodes_per_exp=king_nodes_per_exp,
@@ -380,8 +402,8 @@ with main_tab1:
             st.plotly_chart(fig_hm_gex, width='stretch')
 
     with hm_tab2:
-        if "Institutional" in view_mode:
-            render_institutional_heatmap_grid(
+        if "Heatmap Grid" in view_mode:
+            render_heatmap_grid(
                 matrix=oi_matrix,
                 spot_price=spot_price,
                 symbol=current_ticker,
@@ -400,8 +422,8 @@ with main_tab1:
             st.plotly_chart(fig_hm_oi, width='stretch')
 
     with hm_tab3:
-        if "Institutional" in view_mode:
-            render_institutional_heatmap_grid(
+        if "Heatmap Grid" in view_mode:
+            render_heatmap_grid(
                 matrix=vol_oi_matrix,
                 spot_price=spot_price,
                 symbol=current_ticker,
@@ -423,10 +445,11 @@ with main_tab1:
 with main_tab2:
     t_col1, t_col2 = st.columns([3, 2])
     with t_col1:
-        selected_trinity_tickers = st.multiselect(
-            "Select Tickers for 0DTE Side-by-Side Comparison:",
-            options=PRESET_TICKERS,
-            default=TRINITY_DEFAULT_TICKERS
+        trinity_input = st.text_input(
+            "Enter Tickers for 0DTE Side-by-Side Comparison (comma-separated, max 6):",
+            value="SPX, SPY, QQQ",
+            placeholder="e.g. SPX, SPY, QQQ, NVDA, TSLA, AAPL",
+            help="Enter up to 6 ticker symbols separated by commas to compare 0DTE heatmaps."
         )
     with t_col2:
         trinity_focus_opt = st.selectbox(
@@ -446,21 +469,30 @@ with main_tab2:
     elif "±$500" in trinity_focus_opt:
         trinity_focus_dollar = 500.0
 
-    trinity_data_list = []
-    for t_sym in selected_trinity_tickers:
-        t_data = fetch_ticker_gex_data(t_sym, expiration_count=1, strike_window_pct=8.0, min_oi=min_oi_filter)
-        t_exp = t_data["expirations"][0] if t_data["expirations"] else ""
-        t_df = t_data["exp_gex_dfs"].get(t_exp, pd.DataFrame())
-        t_levels = t_data["key_levels_map"].get(t_exp, {})
-        trinity_data_list.append({
-            "symbol": t_sym,
-            "expiration": t_exp,
-            "spot_price": t_data["spot_price"],
-            "df": t_df,
-            "levels": t_levels
-        })
+    raw_trinity_tickers = [t.strip().upper() for t in trinity_input.split(",") if t.strip()]
+    selected_trinity_tickers = list(dict.fromkeys(raw_trinity_tickers))[:6]
 
-    render_trinity_multi_ticker_view(trinity_data_list, strike_window_dollar=trinity_focus_dollar)
+    if not selected_trinity_tickers:
+        st.warning("Please enter at least one valid ticker symbol above.")
+    else:
+        if len(raw_trinity_tickers) > 6:
+            st.info(f"Displaying first 6 tickers: {', '.join(selected_trinity_tickers)}")
+
+        trinity_data_list = []
+        for t_sym in selected_trinity_tickers:
+            t_data = fetch_ticker_gex_data(t_sym, expiration_count=1, strike_window_pct=max(15.0, strike_window), min_oi=min_oi_filter)
+            t_exp = t_data["expirations"][0] if t_data["expirations"] else ""
+            t_df = t_data["exp_gex_dfs"].get(t_exp, pd.DataFrame())
+            t_levels = t_data["key_levels_map"].get(t_exp, {})
+            trinity_data_list.append({
+                "symbol": t_sym,
+                "expiration": t_exp,
+                "spot_price": t_data["spot_price"],
+                "df": t_df,
+                "levels": t_levels
+            })
+
+        render_trinity_multi_ticker_view(trinity_data_list, strike_window_dollar=trinity_focus_dollar)
 
 # Auto-Refresh Handler
 if auto_refresh:

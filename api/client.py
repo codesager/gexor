@@ -67,7 +67,9 @@ class PublicDotComClientWrapper:
                 quotes = self.sdk_client.get_quotes(instruments=[instrument], account_id=self.account_id)
                 if quotes and len(quotes) > 0 and quotes[0].last:
                     val = float(quotes[0].last)
-                    return val * 10.0 if symbol in {"SPX", "SPXW"} and val < 1000 else val
+                    if symbol in {"SPX", "SPXW"} and 400.0 <= val <= 850.0:
+                        return val * 10.0
+                    return val
             except Exception as e:
                 logger.debug(f"SDK get_quotes failed for {api_symbol}: {e}")
 
@@ -166,7 +168,11 @@ class PublicDotComClientWrapper:
                         g_info = greeks_map.get(osi, {})
                         g_obj = getattr(opt_det, "greeks", None) if opt_det else None
 
-                        gamma = float(getattr(g_obj, "gamma", 0.0) or g_info.get("gamma", 0.0) or 0.001)
+                        val_g = getattr(g_obj, "gamma", None) if g_obj else None
+                        if val_g is None:
+                            val_g = g_info.get("gamma", None)
+                        gamma = float(val_g) if val_g is not None else 0.0
+
                         delta = float(getattr(g_obj, "delta", 0.0) or g_info.get("delta", 0.5 if opt_type == "call" else -0.5) or (0.5 if opt_type == "call" else -0.5))
                         iv = float(getattr(g_obj, "implied_volatility", 0.0) or g_info.get("iv", 0.2) or 0.2)
 

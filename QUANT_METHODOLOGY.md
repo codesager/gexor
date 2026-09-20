@@ -248,7 +248,7 @@ The mathematical outputs map directly to GEXOR visual interface components:
 │ 1. KPI Metric Header Cards (app.py -> render_kpi_header)                   │
 ├──────────────┬──────────────┬──────────────┬────────────────┬───────────────┤
 │ Spot Price   │ Net GEX Total│ King Node    │ Walls          │ Gamma Flip    │
-│ $7,650.50    │ -$16,072.4M  │ 6300 ★       │ 7700 / 6300    │ 3,761.4       │
+│ $7,650.50    │ +$507.2M     │ 7650 ★       │ 7700 / 7625    │ 7,648.5       │
 └──────────────┴──────────────┴──────────────┴────────────────┴───────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -269,19 +269,21 @@ The mathematical outputs map directly to GEXOR visual interface components:
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ 4. Institutional Heatmap Grid (components/institutional_grid.py)            │
+│ 4. Heatmap Grid (components/heatmap.py)                                     │
 │ - Y-Axis: Strike prices (sorted descending)                                 │
 │ - X-Axis: Expiration dates                                                  │
-│ - White Pointer Badge: Highlighting current Spot Strike (e.g. [ 365.0 ])    │
+│ - White Pointer Badge: Highlighting active Spot Strike (e.g. [ 7650.0 ])    │
 │ - Yellow Gold Pill: Highlighting per-column King Nodes ($16,227.4K★)        │
 │ - Teal/Emerald Gradient: Positive Net GEX cells                             │
 │ - Indigo/Purple Gradient: Negative Net GEX cells                            │
+│ - 850px Expanded Container: Fits 30+ strike rows without vertical scroll    │
+│ - Default Strike Focus: ±$100 Dollar Offset around Spot Price               │
 │ - Center Viewport Auto-Scroll: Keeps King Node in vertical center           │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 5. Trinity Multi-Ticker 0DTE View (app.py -> render_trinity_multi_ticker)   │
-│ - Side-by-side Institutional Heatmap Grids for SPX, SPY, QQQ                │
+│ - Side-by-side Heatmap Grids for custom tickers (free-text input, up to 6 max)│
 │ - Auto-centered King Node and Spot Price badges for multi-ticker 0DTE comparison│
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

@@ -9,7 +9,10 @@ from components.metrics import (
     render_trade_recommendations_table,
     render_trinity_multi_ticker_view
 )
-from components.institutional_grid import render_institutional_heatmap_grid
+from components.heatmap import render_heatmap_grid
+
+# Backwards compatibility alias
+render_institutional_heatmap_grid = render_heatmap_grid
 
 __all__ = [
     "create_gex_bar_chart",
@@ -19,5 +22,6 @@ __all__ = [
     "render_regime_banner",
     "render_trade_recommendations_table",
     "render_trinity_multi_ticker_view",
+    "render_heatmap_grid",
     "render_institutional_heatmap_grid"
 ]
