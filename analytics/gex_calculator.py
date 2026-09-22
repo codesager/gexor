@@ -6,15 +6,15 @@ def calculate_gex_df(
     calls_df: pd.DataFrame,
     puts_df: pd.DataFrame,
     spot_price: float,
-    min_oi: int = 10
+    min_oi: int = 10,
+    formula_mode: str = "standard"
 ) -> pd.DataFrame:
     """
     Computes Net GEX, Call GEX, Put GEX, Open Interest, Volume, and Vol/OI ratios per strike.
     
-    Standard Notional GEX formula:
-    Call GEX ($) = Gamma * Call_OI * 100 * Spot^2 * 0.01
-    Put GEX ($)  = - Gamma * Put_OI * 100 * Spot^2 * 0.01
-    Net GEX ($)  = Call GEX + Put GEX
+    Formula Modes:
+    - "standard": Standard Notional GEX ($) per 1% spot move = Gamma * OI * 100 * Spot^2 * 0.01 = 1.0 * Spot^2
+    - "skylit": Skylit Dollar Gamma ($) per $1 spot move = Gamma * OI * 100 * Spot
     """
     if calls_df.empty and puts_df.empty:
         return pd.DataFrame()
@@ -53,9 +53,13 @@ def calculate_gex_df(
         else:
             df[col] = df[col].fillna(default_val)
 
-    # Calculate Notional Gamma ($) per 1% move in spot
-    # Factor = 100 * spot^2 * 0.01 = 1.0 * spot^2
-    gex_multiplier = spot_price * spot_price * 1.0
+    # Calculate Notional Gamma ($) based on formula mode
+    if formula_mode.lower() == "skylit":
+        # Dollar Gamma per $1 move: Gamma * OI * 100 * Spot (expressed such that call_gex_m * 1000 = $K)
+        gex_multiplier = spot_price * 100.0
+    else:
+        # Standard Notional Dollar GEX per 1% move: Gamma * OI * 100 * Spot^2 * 0.01 = 1.0 * Spot^2
+        gex_multiplier = spot_price * spot_price * 1.0
 
     df["call_gex"] = df["call_gamma"] * df["call_open_interest"] * gex_multiplier
     df["put_gex"] = -1.0 * df["put_gamma"] * df["put_open_interest"] * gex_multiplier

@@ -53,12 +53,13 @@ def render_heatmap_grid(
     title: str = "GEX Heatmap Matrix",
     is_currency: bool = True,
     strike_window_dollar: Optional[float] = 100.0,
-    strike_count_around_king: Optional[int] = None
+    strike_count_around_king: Optional[int] = None,
+    formula_mode: str = "standard"
 ):
     """
     Renders an interactive Heatmap Grid Table
     with per-column King Node highlights, centered viewport scrolling,
-    and strike filtering (default ±$100 dollar window around spot or N strikes).
+    distance % badges, and strike filtering.
     """
     if matrix.empty:
         st.info("No options matrix data available to render Heatmap Grid.")
@@ -198,7 +199,7 @@ def render_heatmap_grid(
             text-align: left;
             z-index: 20;
             background-color: #161b22;
-            min-width: 100px;
+            min-width: 120px;
             border-right: 1px solid #30363d;
         }
         .heatmap-grid-table td.col-strike-cell {
@@ -207,7 +208,7 @@ def render_heatmap_grid(
             background-color: #0e1117;
             color: #c9d1d9;
             font-weight: 700;
-            padding: 6px 12px;
+            padding: 6px 10px;
             text-align: left;
             z-index: 5;
             font-size: 0.85rem;
@@ -222,6 +223,26 @@ def render_heatmap_grid(
             border-radius: 4px 12px 12px 4px;
             box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
             display: inline-block;
+        }
+        .badge-dist-pos {
+            background-color: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            border: 1px solid #10b981;
+            border-radius: 8px;
+            font-size: 0.68rem;
+            padding: 1px 4px;
+            font-weight: 700;
+            margin-left: 4px;
+        }
+        .badge-dist-neg {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            font-size: 0.68rem;
+            padding: 1px 4px;
+            font-weight: 700;
+            margin-left: 4px;
         }
         .heatmap-grid-table td.cell-val {
             padding: 7px 12px;
@@ -269,12 +290,14 @@ def render_heatmap_grid(
     
     # Header Control Bar
     king_str = f"{primary_king:g}" if (primary_king % 1 == 0) else f"{primary_king:.1f}"
+    formula_label = "Skylit Model ($)" if formula_mode.lower() == "skylit" else "Standard Notional ($S²)"
     html_lines.append(f"""
     <div class="heatmap-grid-header-bar">
         <div class="heatmap-grid-title">
             <span>🔥 {title}</span>
         </div>
         <div class="heatmap-grid-pill-group">
+            <span class="heatmap-grid-pill" style="border-color:#38bdf8; color:#38bdf8;">📐 Formula: {formula_label}</span>
             <span class="heatmap-grid-pill skylit-pill-spot">🎯 {symbol}: ${spot_price:,.2f}</span>
             <span class="heatmap-grid-pill" style="border-color:#ffd700; color:#ffd700;">👑 King: {king_str}★</span>
         </div>
@@ -302,11 +325,19 @@ def render_heatmap_grid(
         row_attr = ' id="heatmap-center-row"' if is_center_row else ""
         html_lines.append(f'<tr{row_attr}>')
         
+        # Compute distance percentage badge relative to spot price
+        pct_diff = round(((s - spot_price) / spot_price) * 100.0)
+        dist_badge = ""
+        if abs(pct_diff) >= 2 and not is_spot_strike:
+            badge_cls = "badge-dist-pos" if pct_diff > 0 else "badge-dist-neg"
+            sign_str = f"+{pct_diff}%" if pct_diff > 0 else f"{pct_diff}%"
+            dist_badge = f'<span class="{badge_cls}">{sign_str}</span>'
+
         # Strike Y-Axis Cell (With White Spot Badge if spot strike)
         if is_spot_strike:
-            html_lines.append(f'<td class="col-strike-cell"><span class="spot-strike-badge">{strike_str}</span></td>')
+            html_lines.append(f'<td class="col-strike-cell"><span class="spot-strike-badge">{strike_str}</span>{dist_badge}</td>')
         else:
-            html_lines.append(f'<td class="col-strike-cell">{strike_str}</td>')
+            html_lines.append(f'<td class="col-strike-cell">{strike_str}{dist_badge}</td>')
             
         # Expiration Data Cells
         for d in exp_dates:
