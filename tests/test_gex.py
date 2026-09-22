@@ -76,5 +76,14 @@ class TestGEXCalculator(unittest.TestCase):
         dist_pct = abs(levels["king_node"] - 7650.0) / 7650.0 * 100.0
         self.assertLess(dist_pct, 5.0)
 
+    def test_session_store(self):
+        from session_store import load_session, save_session
+        test_state = {"authenticated": True, "active_ticker": "QCOM", "gex_formula_mode": "Skylit Model ($)"}
+        save_session(test_state)
+        loaded = load_session()
+        self.assertTrue(loaded["authenticated"])
+        self.assertEqual(loaded["active_ticker"], "QCOM")
+        self.assertEqual(loaded["gex_formula_mode"], "Skylit Model ($)")
+
 if __name__ == "__main__":
     unittest.main()

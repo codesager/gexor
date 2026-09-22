@@ -74,6 +74,14 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+from session_store import load_session, save_session, PERSISTENT_KEYS
+
+# Load persistent session state and user preferences from disk
+saved_session = load_session()
+for k, v in saved_session.items():
+    if k in PERSISTENT_KEYS and k not in st.session_state:
+        st.session_state[k] = v
+
 # Initialize Client API Wrapper in Session State
 if "client" not in st.session_state:
     st.session_state.client = PublicDotComClientWrapper(
@@ -82,14 +90,11 @@ if "client" not in st.session_state:
     )
 
 if "last_refresh_time" not in st.session_state:
-    st.session_state.last_refresh_time = datetime.datetime.now().strftime("%H:%M:%S EDT")
+    st.session_state.last_refresh_time = datetime.datetime.now().strftime("%I:%M:%S %p")
 
 # Optional Password Authentication Check
 if APP_PASSWORD:
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-
-    if not st.session_state.authenticated:
+    if not st.session_state.get("authenticated", False):
         st.markdown("## 🔒 GEXOR Dashboard Protection")
         with st.form("login_form"):
             pwd = st.text_input("Enter Dashboard Password:", type="password")
@@ -97,6 +102,7 @@ if APP_PASSWORD:
             if submit_login:
                 if pwd == APP_PASSWORD:
                     st.session_state.authenticated = True
+                    save_session(dict(st.session_state))
                     st.rerun()
                 else:
                     st.error("Invalid password")
@@ -104,7 +110,7 @@ if APP_PASSWORD:
 
 # Cache API calls per ticker and expiration for fast response
 @st.cache_data(ttl=30, show_spinner=False)
-def fetch_ticker_gex_data(symbol: str, expiration_count: int, strike_window_pct: float, min_oi: int):
+def fetch_ticker_gex_data(symbol: str, expiration_count: int = 20, strike_window_pct: float = 12.0, min_oi: int = 10, formula_mode: str = "standard"):
     client = st.session_state.client
     spot = client.get_spot_price(symbol)
     expirations = client.get_option_expirations(symbol, count=expiration_count)
@@ -119,7 +125,7 @@ def fetch_ticker_gex_data(symbol: str, expiration_count: int, strike_window_pct:
         calls_df = pd.DataFrame(chain_raw.get("calls", []))
         puts_df = pd.DataFrame(chain_raw.get("puts", []))
 
-        gex_df = calculate_gex_df(calls_df, puts_df, spot_price=spot, min_oi=min_oi)
+        gex_df = calculate_gex_df(calls_df, puts_df, spot_price=spot, min_oi=min_oi, formula_mode=formula_mode)
         if not gex_df.empty:
             all_chain_strikes.extend(gex_df["strike"].tolist())
         exp_gex_dfs[exp] = gex_df
@@ -157,17 +163,45 @@ def fetch_ticker_gex_data(symbol: str, expiration_count: int, strike_window_pct:
 # SIDEBAR CONTROLS
 st.sidebar.markdown("## ⚙️ Dashboard Controls")
 
+formula_opts = ["Standard Notional ($S²)", "Skylit Model ($)"]
+saved_formula_idx = formula_opts.index(st.session_state.get("gex_formula_mode")) if st.session_state.get("gex_formula_mode") in formula_opts else 0
+
+gex_formula_mode = st.sidebar.radio(
+    "📐 GEX Formula Methodology",
+    options=formula_opts,
+    index=saved_formula_idx,
+    help="Standard Notional measures dollar gamma per 1% spot move (Gamma * OI * S²). Skylit Model measures dollar gamma per $1 move (Gamma * OI * S) matching Skylit platform metrics."
+)
+if gex_formula_mode != st.session_state.get("gex_formula_mode"):
+    st.session_state.gex_formula_mode = gex_formula_mode
+    save_session(dict(st.session_state))
+
+formula_mode_key = "skylit" if "Skylit" in gex_formula_mode else "standard"
+
 strike_window = st.sidebar.slider(
     "Strike Window Range (±%)",
-    min_value=4.0, max_value=25.0, value=DEFAULT_STRIKE_WINDOW_PCT, step=1.0,
+    min_value=4.0, max_value=25.0, value=float(st.session_state.get("strike_window", DEFAULT_STRIKE_WINDOW_PCT)), step=1.0,
     help="Filters strikes within ±X% around current spot price."
 )
+if strike_window != st.session_state.get("strike_window"):
+    st.session_state.strike_window = strike_window
+    save_session(dict(st.session_state))
 
 min_oi_filter = st.sidebar.slider(
     "Minimum Open Interest (OI)",
-    min_value=0, max_value=500, value=DEFAULT_MIN_OI, step=10,
+    min_value=0, max_value=500, value=int(st.session_state.get("min_oi_filter", DEFAULT_MIN_OI)), step=10,
     help="Filters out low liquidity options with OI below threshold."
 )
+if min_oi_filter != st.session_state.get("min_oi_filter"):
+    st.session_state.min_oi_filter = min_oi_filter
+    save_session(dict(st.session_state))
+
+def get_formatted_refresh_time() -> str:
+    """Returns formatted 12-hour timestamp with AM/PM (e.g. 09:12:49 PM)."""
+    return datetime.datetime.now().strftime("%I:%M:%S %p")
+
+if "last_refresh_time" not in st.session_state:
+    st.session_state.last_refresh_time = get_formatted_refresh_time()
 
 # Auto Refresh & Manual Refresh Controls
 st.sidebar.markdown("---")
@@ -175,7 +209,7 @@ st.sidebar.markdown("### 🔄 Refresh Controls")
 auto_refresh = st.sidebar.toggle("30-Sec Auto Refresh", value=False)
 if st.sidebar.button("🔄 Refresh Data Now"):
     st.cache_data.clear()
-    st.session_state.last_refresh_time = datetime.datetime.now().strftime("%H:%M:%S EDT")
+    st.session_state.last_refresh_time = get_formatted_refresh_time()
     st.rerun()
 
 st.sidebar.caption(f"Last updated: **{st.session_state.last_refresh_time}**")
@@ -208,6 +242,8 @@ for idx, preset in enumerate(PRESET_TICKERS[:8]):
     with preset_cols[idx]:
         if st.button(preset, key=f"btn_{preset}"):
             st.session_state.active_ticker = preset
+            save_session(dict(st.session_state))
+            st.rerun()
 
 with preset_cols[8]:
     custom_input = st.text_input(
@@ -217,64 +253,71 @@ with preset_cols[8]:
     )
     if custom_input and custom_input.upper().strip() != st.session_state.active_ticker:
         st.session_state.active_ticker = custom_input.upper().strip()
+        save_session(dict(st.session_state))
+        st.rerun()
 
 current_ticker = st.session_state.active_ticker.upper().strip()
 
-# Expiration count logic (0DTE/1DTE for indices, 6 for equities)
-default_exp_count = DEFAULT_INDEX_EXPIRATIONS_COUNT if current_ticker in INDEX_TICKERS else DEFAULT_EQUITY_EXPIRATIONS_COUNT
-exp_count = st.sidebar.slider(
-    "Expirations to Pull",
-    min_value=1, max_value=10, value=default_exp_count, step=1,
-    help="0DTE and 1DTE for indices; 5-7 for individual equities."
+# MAIN DASHBOARD NAVIGATION TABS
+tab_options = ["📊 Single Ticker Deep Dive", "⚡ 0DTE Multi-Ticker Matrix (Trinity View)"]
+saved_tab = st.session_state.get("active_tab", tab_options[0])
+saved_tab_idx = tab_options.index(saved_tab) if saved_tab in tab_options else 0
+
+active_tab = st.radio(
+    "Select Dashboard View:",
+    options=tab_options,
+    index=saved_tab_idx,
+    horizontal=True,
+    key="active_tab_nav"
 )
+if active_tab != st.session_state.get("active_tab"):
+    st.session_state.active_tab = active_tab
+    save_session(dict(st.session_state))
 
-# FETCH DATA FOR ACTIVE TICKER
-data = fetch_ticker_gex_data(current_ticker, exp_count, strike_window, min_oi_filter)
-spot_price = data["spot_price"]
-expirations = data["expirations"]
+# CONDITIONAL DATA FETCHING BASED ON ACTIVE VIEW
+if active_tab == "📊 Single Ticker Deep Dive":
+    # FETCH DATA FOR ACTIVE TICKER ONLY (ALL AVAILABLE EXPIRATIONS)
+    data = fetch_ticker_gex_data(current_ticker, expiration_count=20, strike_window_pct=strike_window, min_oi=min_oi_filter, formula_mode=formula_mode_key)
+    spot_price = data["spot_price"]
+    expirations = data["expirations"]
 
-if not expirations:
-    st.error(f"No option expirations found for ticker {current_ticker}.")
-    st.stop()
+    if not expirations:
+        st.error(f"No option expirations found for ticker {current_ticker}.")
+        st.stop()
 
-# AGGREGATE GEX DATA ACROSS ALL EXPIRATIONS
-all_dfs = [df for df in data["exp_gex_dfs"].values() if not df.empty]
-if all_dfs:
-    agg_df = pd.concat(all_dfs, ignore_index=True).groupby("strike", as_index=False).agg({
-        "call_gex_m": "sum",
-        "put_gex_m": "sum",
-        "net_gex_m": "sum",
-        "call_open_interest": "sum",
-        "put_open_interest": "sum",
-        "total_oi": "sum",
-        "call_volume": "sum",
-        "put_volume": "sum",
-        "total_volume": "sum",
-        "call_last": "mean",
-        "put_last": "mean",
-        "call_gamma": "mean",
-        "put_gamma": "mean",
-    })
-    agg_df["call_vol_oi_ratio"] = agg_df["call_volume"] / (agg_df["call_open_interest"].replace(0, 1))
-    agg_df["put_vol_oi_ratio"] = agg_df["put_volume"] / (agg_df["put_open_interest"].replace(0, 1))
-    agg_df["total_vol_oi_ratio"] = agg_df["total_volume"] / (agg_df["total_oi"].replace(0, 1))
-    agg_df["call_gex"] = agg_df["call_gex_m"] * 1e6
-    agg_df["put_gex"] = agg_df["put_gex_m"] * 1e6
-    agg_df["net_gex"] = agg_df["net_gex_m"] * 1e6
-else:
-    agg_df = pd.DataFrame()
+    # AGGREGATE GEX DATA ACROSS ALL EXPIRATIONS
+    all_dfs = [df for df in data["exp_gex_dfs"].values() if not df.empty]
+    if all_dfs:
+        agg_df = pd.concat(all_dfs, ignore_index=True).groupby("strike", as_index=False).agg({
+            "call_gex_m": "sum",
+            "put_gex_m": "sum",
+            "net_gex_m": "sum",
+            "call_open_interest": "sum",
+            "put_open_interest": "sum",
+            "total_oi": "sum",
+            "call_volume": "sum",
+            "put_volume": "sum",
+            "total_volume": "sum",
+            "call_last": "mean",
+            "put_last": "mean",
+            "call_gamma": "mean",
+            "put_gamma": "mean",
+        })
+        agg_df["call_vol_oi_ratio"] = agg_df["call_volume"] / (agg_df["call_open_interest"].replace(0, 1))
+        agg_df["put_vol_oi_ratio"] = agg_df["put_volume"] / (agg_df["put_open_interest"].replace(0, 1))
+        agg_df["total_vol_oi_ratio"] = agg_df["total_volume"] / (agg_df["total_oi"].replace(0, 1))
+        agg_df["call_gex"] = agg_df["call_gex_m"] * 1e6
+        agg_df["put_gex"] = agg_df["put_gex_m"] * 1e6
+        agg_df["net_gex"] = agg_df["net_gex_m"] * 1e6
+    else:
+        agg_df = pd.DataFrame()
 
-agg_levels = find_gex_key_levels(agg_df, spot_price)
-first_exp = expirations[0]
-first_straddle_move = data["expected_moves_map"].get(first_exp, calculate_atm_straddle_move(agg_df, spot_price))
-regime = analyze_gamma_regime(agg_levels["net_gex_total_m"], spot_price, agg_levels["gamma_flip"])
-pinning = calculate_pinning_score(spot_price, agg_levels["king_node"], agg_levels["call_wall"], agg_levels["put_wall"], dte_days=0.5)
+    agg_levels = find_gex_key_levels(agg_df, spot_price)
+    first_exp = expirations[0]
+    first_straddle_move = data["expected_moves_map"].get(first_exp, calculate_atm_straddle_move(agg_df, spot_price))
+    regime = analyze_gamma_regime(agg_levels["net_gex_total_m"], spot_price, agg_levels["gamma_flip"])
+    pinning = calculate_pinning_score(spot_price, agg_levels["king_node"], agg_levels["call_wall"], agg_levels["put_wall"], dte_days=0.5)
 
-# MAIN DASHBOARD TABS
-main_tab1, main_tab2 = st.tabs(["📊 Single Ticker Deep Dive", "⚡ 0DTE Multi-Ticker Matrix (Trinity View)"])
-
-# TAB 1: SINGLE TICKER DEEP DIVE
-with main_tab1:
     # 1. KPI Header
     render_kpi_header(current_ticker, spot_price, agg_levels, first_straddle_move, regime, pinning)
     render_regime_banner(regime, pinning)
@@ -391,7 +434,8 @@ with main_tab1:
                 title=f"{current_ticker} Net GEX Matrix (King Nodes Highlighted)",
                 is_currency=True,
                 strike_window_dollar=strike_focus_dollar,
-                strike_count_around_king=strike_count_around_king
+                strike_count_around_king=strike_count_around_king,
+                formula_mode=formula_mode_key
             )
         else:
             fig_hm_gex = create_gex_heatmap(
@@ -441,16 +485,21 @@ with main_tab1:
             )
             st.plotly_chart(fig_hm_vol, width='stretch')
 
-# TAB 2: 0DTE MULTI-TICKER MATRIX (TRINITY VIEW)
-with main_tab2:
+else:
+    # TAB 2: 0DTE MULTI-TICKER MATRIX (TRINITY VIEW ONLY)
     t_col1, t_col2 = st.columns([3, 2])
     with t_col1:
+        saved_trinity = st.session_state.get("trinity_input", "SPX, SPY, QQQ")
         trinity_input = st.text_input(
             "Enter Tickers for 0DTE Side-by-Side Comparison (comma-separated, max 6):",
-            value="SPX, SPY, QQQ",
+            value=saved_trinity,
             placeholder="e.g. SPX, SPY, QQQ, NVDA, TSLA, AAPL",
             help="Enter up to 6 ticker symbols separated by commas to compare 0DTE heatmaps."
         )
+        if trinity_input != st.session_state.get("trinity_input"):
+            st.session_state.trinity_input = trinity_input
+            save_session(dict(st.session_state))
+
     with t_col2:
         trinity_focus_opt = st.selectbox(
             "Trinity Strike Focus Range:",
@@ -480,7 +529,8 @@ with main_tab2:
 
         trinity_data_list = []
         for t_sym in selected_trinity_tickers:
-            t_data = fetch_ticker_gex_data(t_sym, expiration_count=1, strike_window_pct=max(15.0, strike_window), min_oi=min_oi_filter)
+            # STRICTLY PULL 0DTE (expiration_count=1) FOR TRINITY VIEW
+            t_data = fetch_ticker_gex_data(t_sym, expiration_count=1, strike_window_pct=max(15.0, strike_window), min_oi=min_oi_filter, formula_mode=formula_mode_key)
             t_exp = t_data["expirations"][0] if t_data["expirations"] else ""
             t_df = t_data["exp_gex_dfs"].get(t_exp, pd.DataFrame())
             t_levels = t_data["key_levels_map"].get(t_exp, {})

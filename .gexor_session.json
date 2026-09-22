@@ -1,0 +1,10 @@
+{
+  "user_timezone": "Auto-Detect Local Time",
+  "active_ticker": "QCOM",
+  "authenticated": true,
+  "trinity_input": "SPX, SPY, QQQ",
+  "gex_formula_mode": "Standard Notional ($S\u00b2)",
+  "strike_window": 12.0,
+  "min_oi_filter": 10,
+  "active_tab": "\u26a1 0DTE Multi-Ticker Matrix (Trinity View)"
+}
